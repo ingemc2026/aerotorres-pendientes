@@ -313,18 +313,16 @@ function loadLocal() {
   } catch(e) { console.warn('localStorage load error:', e); }
 }
 
-// --- Guardar: Sheets + caché local ---
+// --- Guardar: Sheets via GET (evita CORS) + caché local ---
 async function saveData() {
-  saveLocal(); // siempre guarda local primero (respaldo inmediato)
+  saveLocal();
   if (!USE_SHEETS) return;
   if (isSyncing) return;
   isSyncing = true;
   updateStorageIndicator('saving');
   try {
-    const resp = await fetch(SHEETS_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'save', records }),
-    });
+    const data = encodeURIComponent(JSON.stringify({ action: 'save', records }));
+    const resp = await fetch(SHEETS_URL + '?data=' + data, { method: 'GET' });
     const json = await resp.json();
     updateStorageIndicator(json.ok ? 'ok' : 'error');
   } catch(e) {
@@ -338,7 +336,7 @@ async function loadFromSheets() {
   if (!USE_SHEETS) { loadLocal(); return; }
   updateStorageIndicator('loading');
   try {
-    const resp = await fetch(SHEETS_URL + '?t=' + Date.now());
+    const resp = await fetch(SHEETS_URL + '?action=get&t=' + Date.now(), { method: 'GET' });
     const json = await resp.json();
     if (json.ok && Array.isArray(json.records) && json.records.length > 0) {
       records = json.records.map(r => ({
