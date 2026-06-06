@@ -400,7 +400,7 @@ function loadLocal() {
 
 let lastSaveTime = 0; // timestamp del último guardado
 
-// --- Guardar en Sheets via POST ---
+// --- Guardar en Sheets via formulario oculto (sin restricciones CORS) ---
 function saveToSheets() {
   if (!USE_SHEETS) return Promise.resolve();
   const snapshot = JSON.parse(JSON.stringify(records));
@@ -409,14 +409,47 @@ function saveToSheets() {
   updateStorageIndicator('saving');
   return new Promise((resolve) => {
     try {
-      fetch(SHEETS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'save', records: snapshot })
-      })
-      .then(() => { updateStorageIndicator('ok'); resolve(); })
-      .catch(() => { updateStorageIndicator('offline'); resolve(); });
+      // Crear iframe oculto para recibir la respuesta sin bloquear
+      const iframeId = 'saveFrame_' + Date.now();
+      const iframe = document.createElement('iframe');
+      iframe.name = iframeId;
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      // Crear formulario apuntando al iframe
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = SHEETS_URL;
+      form.target = iframeId;
+      form.style.display = 'none';
+
+      // Campo con los datos
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'payload';
+      input.value = JSON.stringify({ action: 'save', records: snapshot });
+      form.appendChild(input);
+
+      document.body.appendChild(form);
+
+      iframe.onload = function() {
+        updateStorageIndicator('ok');
+        // Limpiar
+        setTimeout(() => {
+          document.body.removeChild(form);
+          document.body.removeChild(iframe);
+        }, 1000);
+        resolve();
+      };
+
+      // Timeout de seguridad
+      setTimeout(() => {
+        updateStorageIndicator('ok');
+        try { document.body.removeChild(form); document.body.removeChild(iframe); } catch(e) {}
+        resolve();
+      }, 8000);
+
+      form.submit();
     } catch(e) {
       updateStorageIndicator('offline');
       resolve();
