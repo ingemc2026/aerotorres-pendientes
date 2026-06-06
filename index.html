@@ -398,22 +398,24 @@ function loadLocal() {
   } catch(e) { console.warn('localStorage load error:', e); }
 }
 
-// --- Guardar en Sheets en segundo plano (no bloquea UI) ---
-async function saveToSheets() {
-  if (!USE_SHEETS) return;
-  // Captura snapshot actual de records para enviar
+// --- Guardar en Sheets en segundo plano (evita CORS con truco de imagen) ---
+function saveToSheets() {
+  if (!USE_SHEETS) return Promise.resolve();
   const snapshot = JSON.parse(JSON.stringify(records));
-  isSyncing = true;
   updateStorageIndicator('saving');
-  try {
-    const data = encodeURIComponent(JSON.stringify({ action: 'save', records: snapshot }));
-    const resp = await fetch(SHEETS_URL + '?data=' + data, { method: 'GET' });
-    const json = await resp.json();
-    updateStorageIndicator(json.ok ? 'ok' : 'error');
-  } catch(e) {
-    updateStorageIndicator('offline');
-  }
-  isSyncing = false;
+  return new Promise((resolve) => {
+    try {
+      const data = encodeURIComponent(JSON.stringify({ action: 'save', records: snapshot }));
+      const url = SHEETS_URL + '?data=' + data;
+      // Usamos fetch con mode no-cors para evitar el bloqueo CORS en la redirección de Apps Script
+      fetch(url, { method: 'GET', mode: 'no-cors' })
+        .then(() => { updateStorageIndicator('ok'); resolve(); })
+        .catch(() => { updateStorageIndicator('offline'); resolve(); });
+    } catch(e) {
+      updateStorageIndicator('offline');
+      resolve();
+    }
+  });
 }
 
 // --- Guardar: Sheets via GET (evita CORS) + caché local ---
@@ -425,11 +427,14 @@ async function saveData() {
 // --- Cargar: Sheets con fallback a local ---
 async function loadFromSheets() {
   if (!USE_SHEETS) { loadLocal(); return; }
-  // No recargar si hay una edición activa o sincronización en curso
   if (editId !== null || isSyncing) return;
   updateStorageIndicator('loading');
   try {
-    const resp = await fetch(SHEETS_URL + '?action=get&t=' + Date.now(), { method: 'GET' });
+    const resp = await fetch(SHEETS_URL + '?action=get&t=' + Date.now(), {
+      method: 'GET',
+      mode: 'cors',
+      redirect: 'follow'
+    });
     const json = await resp.json();
     if (json.ok && Array.isArray(json.records) && json.records.length > 0) {
       records = json.records.map(r => ({
@@ -444,14 +449,15 @@ async function loadFromSheets() {
         fechaSubsanacion: String(r.fechaSubsanacion || ''),
         obsSubsanacion:   String(r.obsSubsanacion || ''),
         ultimaModificacion: r.ultimaModificacion
-          ? (typeof r.ultimaModificacion === 'string' ? JSON.parse(r.ultimaModificacion) : r.ultimaModificacion)
+          ? (typeof r.ultimaModificacion === 'string'
+              ? (() => { try { return JSON.parse(r.ultimaModificacion); } catch(e) { return null; } })()
+              : r.ultimaModificacion)
           : null,
       }));
       nextId = Math.max(1, ...records.map(r => r.id)) + 1;
       saveLocal();
       updateStorageIndicator('ok');
     } else {
-      // Sheets vacío — resetear todo
       records = [];
       nextId = 1;
       saveLocal();
