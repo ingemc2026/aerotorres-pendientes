@@ -400,20 +400,23 @@ function loadLocal() {
 
 let lastSaveTime = 0; // timestamp del último guardado
 
-// --- Guardar en Sheets en segundo plano ---
+// --- Guardar en Sheets via POST ---
 function saveToSheets() {
   if (!USE_SHEETS) return Promise.resolve();
   const snapshot = JSON.parse(JSON.stringify(records));
-  lastSaveTime = Date.now(); // registrar momento del guardado
+  lastSaveTime = Date.now();
   saveLocal();
   updateStorageIndicator('saving');
   return new Promise((resolve) => {
     try {
-      const data = encodeURIComponent(JSON.stringify({ action: 'save', records: snapshot }));
-      const url = SHEETS_URL + '?data=' + data;
-      fetch(url, { method: 'GET', mode: 'no-cors' })
-        .then(() => { updateStorageIndicator('ok'); resolve(); })
-        .catch(() => { updateStorageIndicator('offline'); resolve(); });
+      fetch(SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'save', records: snapshot })
+      })
+      .then(() => { updateStorageIndicator('ok'); resolve(); })
+      .catch(() => { updateStorageIndicator('offline'); resolve(); });
     } catch(e) {
       updateStorageIndicator('offline');
       resolve();
