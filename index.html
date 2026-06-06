@@ -626,10 +626,12 @@ function confirmEditLogin() {
     document.getElementById('editPass').focus();
     return;
   }
-  // Credenciales correctas — abrir formulario con datos
-  closeEditLoginModal();
-  openEditForm(pendingEditId, user);
+  // Credenciales correctas — guardar id y usuario antes de cerrar modal
+  const idToEdit = pendingEditId;
+  const loggedUser = user;
+  document.getElementById('editLoginModal').style.display = 'none';
   pendingEditId = null;
+  openEditForm(idToEdit, loggedUser);
 }
 
 function closeEditLoginModal() {
