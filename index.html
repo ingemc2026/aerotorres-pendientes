@@ -398,16 +398,19 @@ function loadLocal() {
   } catch(e) { console.warn('localStorage load error:', e); }
 }
 
-// --- Guardar en Sheets en segundo plano (evita CORS con truco de imagen) ---
+let lastSaveTime = 0; // timestamp del último guardado
+
+// --- Guardar en Sheets en segundo plano ---
 function saveToSheets() {
   if (!USE_SHEETS) return Promise.resolve();
   const snapshot = JSON.parse(JSON.stringify(records));
+  lastSaveTime = Date.now(); // registrar momento del guardado
+  saveLocal();
   updateStorageIndicator('saving');
   return new Promise((resolve) => {
     try {
       const data = encodeURIComponent(JSON.stringify({ action: 'save', records: snapshot }));
       const url = SHEETS_URL + '?data=' + data;
-      // Usamos fetch con mode no-cors para evitar el bloqueo CORS en la redirección de Apps Script
       fetch(url, { method: 'GET', mode: 'no-cors' })
         .then(() => { updateStorageIndicator('ok'); resolve(); })
         .catch(() => { updateStorageIndicator('offline'); resolve(); });
@@ -418,16 +421,17 @@ function saveToSheets() {
   });
 }
 
-// --- Guardar: Sheets via GET (evita CORS) + caché local ---
+// --- Guardar: Sheets + caché local ---
 async function saveData() {
-  saveLocal();
-  saveToSheets();
+  return saveToSheets();
 }
 
 // --- Cargar: Sheets con fallback a local ---
 async function loadFromSheets() {
   if (!USE_SHEETS) { loadLocal(); return; }
-  if (editId !== null || isSyncing) return;
+  // No recargar si hay edición activa o si se guardó hace menos de 15 segundos
+  if (editId !== null) return;
+  if (Date.now() - lastSaveTime < 15000) return;
   updateStorageIndicator('loading');
   try {
     const resp = await fetch(SHEETS_URL + '?action=get&t=' + Date.now(), {
@@ -785,22 +789,22 @@ function submitForm() {
     records.push(rec);
   }
 
-  // Resetear estado de edición ANTES de guardar para que loadFromSheets no bloquee
+  // Resetear estado de edición ANTES de guardar
   editId = null;
   window._editingUser = null;
   document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
   document.getElementById('cancelEditBtn').style.display = 'none';
   document.querySelector('.btn-primary').textContent = 'Crear registro';
 
-  saveLocal();
-  saveToSheets().then(() => {
-    renderTable(); renderStats0();
-    if (currentTab === 2) renderDashboard();
-  });
-
+  // Renderizar inmediatamente con datos locales
   clearForm();
   switchTab(0);
+  renderTable(); renderStats0();
+  if (currentTab === 2) renderDashboard();
   showToast(wasEditing ? 'Registro actualizado correctamente.' : 'Registro creado exitosamente.');
+
+  // Guardar en Sheets en segundo plano
+  saveToSheets();
 }
 
 function clearForm() {
