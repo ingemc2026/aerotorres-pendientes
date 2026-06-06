@@ -649,12 +649,22 @@ function openEditForm(id, loggedUser) {
   const r = records.find(x => x.id === id);
   if (!r) return;
   editId = id;
-  // Guardar el usuario que está editando para trazabilidad
   window._editingUser = loggedUser;
   document.getElementById('formTitle').textContent = 'Editar registro';
   document.getElementById('cancelEditBtn').style.display = '';
+
+  // Normalizar fecha al formato YYYY-MM-DD que requiere input type=date
   let fecha = String(r.fechaRadicado || '').trim();
-  if (fecha && fecha.length > 10) fecha = fecha.slice(0, 10);
+  // Eliminar hora si viene con timestamp (ej: "2026-04-11 00:00:00" o "2026-04-11T00:00:00")
+  fecha = fecha.replace(/[T ].*$/, '');
+  // Si viene en formato DD/MM/YYYY convertir a YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) {
+    const parts = fecha.split('/');
+    fecha = `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  // Validar que sea una fecha válida
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fecha = '';
+
   document.getElementById('fFecha').value = fecha;
   document.getElementById('fEstadoF').value = r.estado;
   document.getElementById('fEstacionF').value = r.estacion;
@@ -662,7 +672,16 @@ function openEditForm(id, loggedUser) {
   document.getElementById('fComponenteF').value = r.componente;
   document.getElementById('fDesc').value = r.descripcion;
   document.getElementById('fObs').value = r.observaciones;
-  document.getElementById('fFechaSub').value = String(r.fechaSubsanacion || '').slice(0,10);
+
+  // Normalizar fecha subsanación igual
+  let fechaSub = String(r.fechaSubsanacion || '').trim().replace(/[T ].*$/, '');
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaSub)) {
+    const parts = fechaSub.split('/');
+    fechaSub = `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaSub)) fechaSub = '';
+  document.getElementById('fFechaSub').value = fechaSub;
+
   document.getElementById('fObsSub').value = r.obsSubsanacion;
   toggleSubsanacion();
   document.querySelector('.btn-primary').textContent = 'Guardar cambios';
