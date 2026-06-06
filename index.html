@@ -234,6 +234,34 @@
   </div>
 </div>
 
+<!-- LOGIN ELIMINAR REGISTRO INDIVIDUAL -->
+<div id="deleteLoginModal" style="display:none;position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,0.5);align-items:center;justify-content:center">
+  <div style="background:var(--bg);border-radius:12px;padding:28px 32px;width:340px;box-shadow:0 4px 32px rgba(0,0,0,0.25)">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:28px;margin-bottom:6px">🔐</div>
+      <h2 style="font-size:16px;font-weight:500;margin:0 0 4px">Autenticación requerida</h2>
+      <p style="font-size:12px;color:var(--text2);margin:0" id="deleteLoginInfo">Ingresa las credenciales del componente para eliminar este registro.</p>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:500;color:var(--text2);display:block;margin-bottom:4px">Usuario</label>
+      <input type="text" id="deleteUser" placeholder="Usuario del componente"
+        style="width:100%;padding:8px 10px;border:0.5px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text)"
+        onkeydown="if(event.key==='Enter') document.getElementById('deletePass').focus()">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;font-weight:500;color:var(--text2);display:block;margin-bottom:4px">Contraseña</label>
+      <input type="password" id="deletePass" placeholder="Contraseña"
+        style="width:100%;padding:8px 10px;border:0.5px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text)"
+        onkeydown="if(event.key==='Enter') confirmDeleteRecord()">
+    </div>
+    <div id="deleteLoginError" style="font-size:12px;color:#E24B4A;margin-bottom:12px;min-height:16px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="background:#E24B4A;border-color:#E24B4A;flex:1" onclick="confirmDeleteRecord()">Eliminar registro</button>
+      <button class="btn" onclick="closeDeleteLoginModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- PIN MODAL -->
 <div id="pinModal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.5);align-items:center;justify-content:center">
   <div style="background:var(--bg);border-radius:12px;padding:28px 32px;width:320px;box-shadow:0 4px 32px rgba(0,0,0,0.25);text-align:center">
@@ -342,9 +370,8 @@ function loadLocal() {
   } catch(e) { console.warn('localStorage load error:', e); }
 }
 
-// --- Guardar: Sheets via GET (evita CORS) + caché local ---
-async function saveData() {
-  saveLocal();
+// --- Guardar en Sheets en segundo plano (no bloquea UI) ---
+async function saveToSheets() {
   if (!USE_SHEETS) return;
   if (isSyncing) return;
   isSyncing = true;
@@ -358,6 +385,12 @@ async function saveData() {
     updateStorageIndicator('offline');
   }
   isSyncing = false;
+}
+
+// --- Guardar: Sheets via GET (evita CORS) + caché local ---
+async function saveData() {
+  saveLocal();
+  saveToSheets();
 }
 
 // --- Cargar: Sheets con fallback a local ---
@@ -502,14 +535,17 @@ function editRecord(id) {
   editId = id;
   document.getElementById('formTitle').textContent = 'Editar registro';
   document.getElementById('cancelEditBtn').style.display = '';
-  document.getElementById('fFecha').value = r.fechaRadicado;
+  // Normalizar fecha al formato YYYY-MM-DD que requiere el input type=date
+  let fecha = String(r.fechaRadicado || '').trim();
+  if (fecha && fecha.length > 10) fecha = fecha.slice(0, 10);
+  document.getElementById('fFecha').value = fecha;
   document.getElementById('fEstadoF').value = r.estado;
   document.getElementById('fEstacionF').value = r.estacion;
   document.getElementById('fLote').value = r.lote || '';
   document.getElementById('fComponenteF').value = r.componente;
   document.getElementById('fDesc').value = r.descripcion;
   document.getElementById('fObs').value = r.observaciones;
-  document.getElementById('fFechaSub').value = r.fechaSubsanacion;
+  document.getElementById('fFechaSub').value = String(r.fechaSubsanacion || '').slice(0,10);
   document.getElementById('fObsSub').value = r.obsSubsanacion;
   toggleSubsanacion();
   document.querySelector('.btn-primary').textContent = 'Guardar cambios';
@@ -525,12 +561,67 @@ function cancelEdit() {
   switchTab(0);
 }
 
+// ==================== CREDENCIALES POR COMPONENTE ====================
+// Cambia usuarios y contraseñas según necesites
+const COMPONENT_CREDENTIALS = {
+  'Mecánico':       { user: 'mecanico',      pass: 'mec2024' },
+  'Eléctrico':      { user: 'electrico',     pass: 'ele2024' },
+  'Hidráulico':     { user: 'hidraulico',    pass: 'hid2024' },
+  'Civil':          { user: 'civil',         pass: 'civ2024' },
+  'Estructural':    { user: 'estructural',   pass: 'est2024' },
+  'Arquitectónico': { user: 'arquitectonico',pass: 'arq2024' },
+  'Ambiental':      { user: 'ambiental',     pass: 'amb2024' },
+  'HSE':            { user: 'hse',           pass: 'hse2024' },
+  'Electrónico':    { user: 'electronico',   pass: 'elec2024'},
+  'Otro':           { user: 'otro',          pass: 'otr2024' },
+};
+// =====================================================================
+
+let pendingDeleteId = null;
+
 function deleteRecord(id) {
-  if (!confirm('¿Eliminar este registro?')) return;
-  records = records.filter(r=>r.id!==id);
-  saveData(); updateStorageIndicator();
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  pendingDeleteId = id;
+  document.getElementById('deleteLoginInfo').textContent =
+    `Componente: "${r.componente}" — Ingresa las credenciales para eliminar este registro.`;
+  document.getElementById('deleteUser').value = '';
+  document.getElementById('deletePass').value = '';
+  document.getElementById('deleteLoginError').textContent = '';
+  document.getElementById('deleteLoginModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('deleteUser').focus(), 100);
+}
+
+function confirmDeleteRecord() {
+  const user = document.getElementById('deleteUser').value.trim();
+  const pass = document.getElementById('deletePass').value;
+  const r = records.find(x => x.id === pendingDeleteId);
+  if (!r) { closeDeleteLoginModal(); return; }
+
+  const creds = COMPONENT_CREDENTIALS[r.componente];
+  if (!creds) {
+    document.getElementById('deleteLoginError').textContent = 'Componente sin credenciales configuradas.';
+    return;
+  }
+  if (user !== creds.user || pass !== creds.pass) {
+    document.getElementById('deleteLoginError').textContent = 'Usuario o contraseña incorrectos.';
+    document.getElementById('deletePass').value = '';
+    document.getElementById('deletePass').focus();
+    return;
+  }
+  // Credenciales correctas
+  records = records.filter(x => x.id !== pendingDeleteId);
+  saveLocal();
+  saveToSheets();
+  closeDeleteLoginModal();
   renderTable(); renderStats0();
+  if (currentTab === 2) renderDashboard();
   showToast('Registro eliminado.', 'warning');
+}
+
+function closeDeleteLoginModal() {
+  document.getElementById('deleteLoginModal').style.display = 'none';
+  pendingDeleteId = null;
 }
 
 function toggleSubsanacion() {
@@ -555,7 +646,8 @@ function submitForm() {
   };
   if (editId !== null) {
     records = records.map(r => r.id === editId ? rec : r);
-    saveData(); updateStorageIndicator();
+    saveLocal(); // guarda local inmediatamente
+    saveToSheets(); // sincroniza con Sheets en segundo plano
     showToast('Registro actualizado correctamente.');
     editId = null;
     document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
@@ -563,7 +655,8 @@ function submitForm() {
     document.querySelector('.btn-primary').textContent = 'Crear registro';
   } else {
     records.push(rec);
-    saveData(); updateStorageIndicator();
+    saveLocal(); // guarda local inmediatamente
+    saveToSheets(); // sincroniza con Sheets en segundo plano
     showToast('Registro creado exitosamente.');
   }
   clearForm();
@@ -1030,9 +1123,9 @@ loadFromSheets().then(() => {
   renderStats0();
 });
 
-// Recarga automática cada 60 s si hay conexión y la app está visible
+// Recarga automática cada 60 s si hay conexión, la app está visible y NO se está editando
 setInterval(() => {
-  if (USE_SHEETS && navigator.onLine && !document.hidden && !isSyncing) {
+  if (USE_SHEETS && navigator.onLine && !document.hidden && !isSyncing && editId === null && currentTab !== 1) {
     loadFromSheets().then(() => {
       renderTable(); renderStats0();
       if (currentTab === 2) renderDashboard();
