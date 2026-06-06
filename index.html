@@ -131,7 +131,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>#</th><th>Fecha</th><th>Estación</th><th>Lote</th><th>Componente</th><th>Descripción</th><th>Observaciones Interventoría</th><th>Estado</th><th>Fecha Subsanación</th><th>Obs. Subsanación</th><th>Acciones</th></tr>
+          <tr><th>#</th><th>Fecha</th><th>Estación</th><th>Lote</th><th>Componente</th><th>Descripción</th><th>Observaciones Interventoría</th><th>Estado</th><th>Fecha Subsanación</th><th>Obs. Subsanación</th><th>Última modificación</th><th>Acciones</th></tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -230,6 +230,34 @@
           <tbody id="sumBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN EDITAR REGISTRO -->
+<div id="editLoginModal" style="display:none;position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,0.5);align-items:center;justify-content:center">
+  <div style="background:var(--bg);border-radius:12px;padding:28px 32px;width:340px;box-shadow:0 4px 32px rgba(0,0,0,0.25)">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:28px;margin-bottom:6px">✏️</div>
+      <h2 style="font-size:16px;font-weight:500;margin:0 0 4px">Autenticación para editar</h2>
+      <p style="font-size:12px;color:var(--text2);margin:0" id="editLoginInfo">Ingresa las credenciales del componente para editar este registro.</p>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:500;color:var(--text2);display:block;margin-bottom:4px">Usuario</label>
+      <input type="text" id="editUser" placeholder="Usuario del componente"
+        style="width:100%;padding:8px 10px;border:0.5px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text)"
+        onkeydown="if(event.key==='Enter') document.getElementById('editPass').focus()">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;font-weight:500;color:var(--text2);display:block;margin-bottom:4px">Contraseña</label>
+      <input type="password" id="editPass" placeholder="Contraseña"
+        style="width:100%;padding:8px 10px;border:0.5px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text)"
+        onkeydown="if(event.key==='Enter') confirmEditLogin()">
+    </div>
+    <div id="editLoginError" style="font-size:12px;color:#E24B4A;margin-bottom:12px;min-height:16px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmEditLogin()">Acceder</button>
+      <button class="btn" onclick="closeEditLoginModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -412,6 +440,9 @@ async function loadFromSheets() {
         estado:           String(r.estado || 'Pendiente'),
         fechaSubsanacion: String(r.fechaSubsanacion || ''),
         obsSubsanacion:   String(r.obsSubsanacion || ''),
+        ultimaModificacion: r.ultimaModificacion
+          ? (typeof r.ultimaModificacion === 'string' ? JSON.parse(r.ultimaModificacion) : r.ultimaModificacion)
+          : null,
       }));
       nextId = Math.max(1, ...records.map(r => r.id)) + 1;
       saveLocal();
@@ -491,12 +522,15 @@ function renderTable() {
   if (sortOrder === 'asc')  filtered = filtered.slice().sort((a,b) => a.fechaRadicado.localeCompare(b.fechaRadicado));
   if (sortOrder === 'desc') filtered = filtered.slice().sort((a,b) => b.fechaRadicado.localeCompare(a.fechaRadicado));
   const tbody = document.getElementById('tbody');
-  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="11" class="no-data">No hay registros que coincidan con los filtros.</td></tr>'; }
+  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="12" class="no-data">No hay registros que coincidan con los filtros.</td></tr>'; }
   else {
     tbody.innerHTML = filtered.map(r => {
       const ci = COMPONENTES.indexOf(r.componente) % COMP_COLORS.length;
       const dotColor = COMP_COLORS[ci < 0 ? 0 : ci];
       const badgeClass = r.estado === 'Pendiente' ? 'pendiente' : r.estado === 'Cumplido' ? 'cumplido' : 'no-atendido';
+      const trazabilidad = r.ultimaModificacion
+        ? `<div style="font-size:11px;color:var(--text2);white-space:nowrap">${r.ultimaModificacion.usuario}</div><div style="font-size:10px;color:var(--text3);white-space:nowrap">${r.ultimaModificacion.fecha}</div>`
+        : '<span style="color:var(--text3);font-size:11px">—</span>';
       return `<tr>
         <td style="color:var(--text3);white-space:nowrap">${r.id}</td>
         <td style="white-space:nowrap">${r.fechaRadicado}</td>
@@ -508,6 +542,7 @@ function renderTable() {
         <td><span class="badge ${badgeClass}">${r.estado}</span></td>
         <td style="white-space:nowrap;color:var(--text2)">${r.fechaSubsanacion||'—'}</td>
         <td><div class="cell-obs">${r.obsSubsanacion||'—'}</div></td>
+        <td>${trazabilidad}</td>
         <td style="white-space:nowrap">
           <button class="btn" style="padding:3px 8px;font-size:13px" onclick="editRecord(${r.id})" title="Editar">✏️</button>
           <button class="btn btn-danger" style="padding:3px 8px;font-size:13px;margin-left:4px" onclick="deleteRecord(${r.id})" title="Eliminar">🗑️</button>
@@ -529,13 +564,84 @@ function updateFilters() {
   fe.innerHTML = '<option value="">Todas las estaciones</option>' + ests.map(e=>`<option${e===selE?' selected':''}>${e}</option>`).join('');
 }
 
+function cancelEdit() {
+  editId = null;
+  document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  document.querySelector('.btn-primary').textContent = 'Crear registro';
+  clearForm();
+  switchTab(0);
+}
+
+// ==================== CREDENCIALES POR COMPONENTE ====================
+// Cada componente tiene credenciales separadas para EDITAR y ELIMINAR
+// Cambia usuarios y contraseñas según necesites
+const COMPONENT_CREDENTIALS = {
+  'Mecánico':       { edit: { user: 'mecanico_ed',  pass: 'mec_edit24'  }, del: { user: 'mecanico',      pass: 'mec2024'   } },
+  'Eléctrico':      { edit: { user: 'electrico_ed', pass: 'ele_edit24'  }, del: { user: 'electrico',     pass: 'ele2024'   } },
+  'Hidráulico':     { edit: { user: 'hidraulico_ed',pass: 'hid_edit24'  }, del: { user: 'hidraulico',    pass: 'hid2024'   } },
+  'Civil':          { edit: { user: 'civil_ed',     pass: 'civ_edit24'  }, del: { user: 'civil',         pass: 'civ2024'   } },
+  'Estructural':    { edit: { user: 'estructural_ed',pass:'est_edit24'  }, del: { user: 'estructural',   pass: 'est2024'   } },
+  'Arquitectónico': { edit: { user: 'arq_ed',       pass: 'arq_edit24'  }, del: { user: 'arquitectonico',pass: 'arq2024'   } },
+  'Ambiental':      { edit: { user: 'ambiental_ed', pass: 'amb_edit24'  }, del: { user: 'ambiental',     pass: 'amb2024'   } },
+  'HSE':            { edit: { user: 'hse_ed',       pass: 'hse_edit24'  }, del: { user: 'hse',           pass: 'hse2024'   } },
+  'Electrónico':    { edit: { user: 'electronico_ed',pass:'elec_edit24' }, del: { user: 'electronico',   pass: 'elec2024'  } },
+  'Otro':           { edit: { user: 'otro_ed',      pass: 'otr_edit24'  }, del: { user: 'otro',          pass: 'otr2024'   } },
+};
+// =====================================================================
+
+let pendingDeleteId = null;
+let pendingEditId   = null;
+
+// --- EDITAR con autenticación ---
 function editRecord(id) {
-  const r = records.find(x=>x.id===id);
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  pendingEditId = id;
+  document.getElementById('editLoginInfo').textContent =
+    `Componente: "${r.componente}" — Ingresa las credenciales para editar este registro.`;
+  document.getElementById('editUser').value = '';
+  document.getElementById('editPass').value = '';
+  document.getElementById('editLoginError').textContent = '';
+  document.getElementById('editLoginModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('editUser').focus(), 100);
+}
+
+function confirmEditLogin() {
+  const user = document.getElementById('editUser').value.trim();
+  const pass = document.getElementById('editPass').value;
+  const r = records.find(x => x.id === pendingEditId);
+  if (!r) { closeEditLoginModal(); return; }
+  const creds = COMPONENT_CREDENTIALS[r.componente];
+  if (!creds) {
+    document.getElementById('editLoginError').textContent = 'Componente sin credenciales configuradas.';
+    return;
+  }
+  if (user !== creds.edit.user || pass !== creds.edit.pass) {
+    document.getElementById('editLoginError').textContent = 'Usuario o contraseña incorrectos.';
+    document.getElementById('editPass').value = '';
+    document.getElementById('editPass').focus();
+    return;
+  }
+  // Credenciales correctas — abrir formulario con datos
+  closeEditLoginModal();
+  openEditForm(pendingEditId, user);
+  pendingEditId = null;
+}
+
+function closeEditLoginModal() {
+  document.getElementById('editLoginModal').style.display = 'none';
+  pendingEditId = null;
+}
+
+function openEditForm(id, loggedUser) {
+  const r = records.find(x => x.id === id);
   if (!r) return;
   editId = id;
+  // Guardar el usuario que está editando para trazabilidad
+  window._editingUser = loggedUser;
   document.getElementById('formTitle').textContent = 'Editar registro';
   document.getElementById('cancelEditBtn').style.display = '';
-  // Normalizar fecha al formato YYYY-MM-DD que requiere el input type=date
   let fecha = String(r.fechaRadicado || '').trim();
   if (fecha && fecha.length > 10) fecha = fecha.slice(0, 10);
   document.getElementById('fFecha').value = fecha;
@@ -551,33 +657,6 @@ function editRecord(id) {
   document.querySelector('.btn-primary').textContent = 'Guardar cambios';
   switchTab(1);
 }
-
-function cancelEdit() {
-  editId = null;
-  document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
-  document.getElementById('cancelEditBtn').style.display = 'none';
-  document.querySelector('.btn-primary').textContent = 'Crear registro';
-  clearForm();
-  switchTab(0);
-}
-
-// ==================== CREDENCIALES POR COMPONENTE ====================
-// Cambia usuarios y contraseñas según necesites
-const COMPONENT_CREDENTIALS = {
-  'Mecánico':       { user: 'mecanico',      pass: 'mec2024' },
-  'Eléctrico':      { user: 'electrico',     pass: 'ele2024' },
-  'Hidráulico':     { user: 'hidraulico',    pass: 'hid2024' },
-  'Civil':          { user: 'civil',         pass: 'civ2024' },
-  'Estructural':    { user: 'estructural',   pass: 'est2024' },
-  'Arquitectónico': { user: 'arquitectonico',pass: 'arq2024' },
-  'Ambiental':      { user: 'ambiental',     pass: 'amb2024' },
-  'HSE':            { user: 'hse',           pass: 'hse2024' },
-  'Electrónico':    { user: 'electronico',   pass: 'elec2024'},
-  'Otro':           { user: 'otro',          pass: 'otr2024' },
-};
-// =====================================================================
-
-let pendingDeleteId = null;
 
 function deleteRecord(id) {
   const r = records.find(x => x.id === id);
@@ -597,19 +676,17 @@ function confirmDeleteRecord() {
   const pass = document.getElementById('deletePass').value;
   const r = records.find(x => x.id === pendingDeleteId);
   if (!r) { closeDeleteLoginModal(); return; }
-
   const creds = COMPONENT_CREDENTIALS[r.componente];
   if (!creds) {
     document.getElementById('deleteLoginError').textContent = 'Componente sin credenciales configuradas.';
     return;
   }
-  if (user !== creds.user || pass !== creds.pass) {
+  if (user !== creds.del.user || pass !== creds.del.pass) {
     document.getElementById('deleteLoginError').textContent = 'Usuario o contraseña incorrectos.';
     document.getElementById('deletePass').value = '';
     document.getElementById('deletePass').focus();
     return;
   }
-  // Credenciales correctas
   records = records.filter(x => x.id !== pendingDeleteId);
   saveLocal();
   saveToSheets();
@@ -636,27 +713,39 @@ function submitForm() {
   const comp = document.getElementById('fComponenteF').value;
   const desc = document.getElementById('fDesc').value.trim();
   if (!fecha || !estacion || !lote || !comp || !desc) { showToast('Complete los campos obligatorios (*).', 'error'); return; }
+
+  // Trazabilidad: fecha y hora actual en Colombia (UTC-5)
+  const now = new Date();
+  const fechaHora = now.toLocaleString('es-CO', { timeZone: 'America/Bogota',
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+
   const rec = {
     id: editId !== null ? editId : nextId++,
     fechaRadicado: fecha, estacion, lote, componente: comp, descripcion: desc,
     observaciones: document.getElementById('fObs').value.trim(),
     estado: document.getElementById('fEstadoF').value,
     fechaSubsanacion: document.getElementById('fFechaSub').value,
-    obsSubsanacion: document.getElementById('fObsSub').value.trim()
+    obsSubsanacion: document.getElementById('fObsSub').value.trim(),
+    ultimaModificacion: {
+      usuario: window._editingUser || 'sistema',
+      fecha: fechaHora
+    }
   };
   if (editId !== null) {
     records = records.map(r => r.id === editId ? rec : r);
-    saveLocal(); // guarda local inmediatamente
-    saveToSheets(); // sincroniza con Sheets en segundo plano
+    saveLocal();
+    saveToSheets();
     showToast('Registro actualizado correctamente.');
     editId = null;
+    window._editingUser = null;
     document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
     document.getElementById('cancelEditBtn').style.display = 'none';
     document.querySelector('.btn-primary').textContent = 'Crear registro';
   } else {
     records.push(rec);
-    saveLocal(); // guarda local inmediatamente
-    saveToSheets(); // sincroniza con Sheets en segundo plano
+    saveLocal();
+    saveToSheets();
     showToast('Registro creado exitosamente.');
   }
   clearForm();
@@ -747,7 +836,7 @@ function renderDashboard() {
 }
 
 function exportCSV() {
-  const headers = ["ID","Fecha Radicado","Estación","Lote","Componente","Descripción del Asunto","Observaciones Interventoría","Estado","Fecha Subsanación","Observaciones Subsanación"];
+  const headers = ["ID","Fecha Radicado","Estación","Lote","Componente","Descripción del Asunto","Observaciones Interventoría","Estado","Fecha Subsanación","Observaciones Subsanación","Modificado por","Fecha Modificación"];
   const rows = records.map(r => [
     r.id,
     r.fechaRadicado,
@@ -758,7 +847,9 @@ function exportCSV() {
     r.observaciones,
     r.estado,
     r.fechaSubsanacion || "",
-    r.obsSubsanacion || ""
+    r.obsSubsanacion || "",
+    r.ultimaModificacion ? r.ultimaModificacion.usuario : "",
+    r.ultimaModificacion ? r.ultimaModificacion.fecha : "",
   ]);
 
   const wsData = [headers, ...rows];
@@ -776,6 +867,8 @@ function exportCSV() {
     {wch:14},  // Estado
     {wch:18},  // Fecha Subsanación
     {wch:40},  // Obs Subsanación
+    {wch:18},  // Modificado por
+    {wch:22},  // Fecha Modificación
   ];
 
   // Row heights: header tall, data rows auto-wrap friendly
@@ -810,7 +903,7 @@ function exportCSV() {
   };
   const altRowFill = { fgColor: { rgb: "F5F5F3" } };
 
-  const colLetters = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+  const colLetters = ['A','B','C','D','E','F','G','H','I','J','K','L','M'];
 
   // Apply header styles
   colLetters.forEach(col => {
