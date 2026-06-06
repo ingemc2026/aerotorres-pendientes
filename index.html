@@ -401,11 +401,12 @@ function loadLocal() {
 // --- Guardar en Sheets en segundo plano (no bloquea UI) ---
 async function saveToSheets() {
   if (!USE_SHEETS) return;
-  if (isSyncing) return;
+  // Captura snapshot actual de records para enviar
+  const snapshot = JSON.parse(JSON.stringify(records));
   isSyncing = true;
   updateStorageIndicator('saving');
   try {
-    const data = encodeURIComponent(JSON.stringify({ action: 'save', records }));
+    const data = encodeURIComponent(JSON.stringify({ action: 'save', records: snapshot }));
     const resp = await fetch(SHEETS_URL + '?data=' + data, { method: 'GET' });
     const json = await resp.json();
     updateStorageIndicator(json.ok ? 'ok' : 'error');
@@ -424,6 +425,8 @@ async function saveData() {
 // --- Cargar: Sheets con fallback a local ---
 async function loadFromSheets() {
   if (!USE_SHEETS) { loadLocal(); return; }
+  // No recargar si hay una edición activa o sincronización en curso
+  if (editId !== null || isSyncing) return;
   updateStorageIndicator('loading');
   try {
     const resp = await fetch(SHEETS_URL + '?action=get&t=' + Date.now(), { method: 'GET' });
@@ -714,7 +717,6 @@ function submitForm() {
   const desc = document.getElementById('fDesc').value.trim();
   if (!fecha || !estacion || !lote || !comp || !desc) { showToast('Complete los campos obligatorios (*).', 'error'); return; }
 
-  // Trazabilidad: fecha y hora actual en Colombia (UTC-5)
   const now = new Date();
   const fechaHora = now.toLocaleString('es-CO', { timeZone: 'America/Bogota',
     year:'numeric', month:'2-digit', day:'2-digit',
@@ -732,24 +734,30 @@ function submitForm() {
       fecha: fechaHora
     }
   };
-  if (editId !== null) {
-    records = records.map(r => r.id === editId ? rec : r);
-    saveLocal();
-    saveToSheets();
-    showToast('Registro actualizado correctamente.');
-    editId = null;
-    window._editingUser = null;
-    document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
-    document.getElementById('cancelEditBtn').style.display = 'none';
-    document.querySelector('.btn-primary').textContent = 'Crear registro';
+
+  const wasEditing = editId !== null;
+  if (wasEditing) {
+    records = records.map(r => r.id === rec.id ? rec : r);
   } else {
     records.push(rec);
-    saveLocal();
-    saveToSheets();
-    showToast('Registro creado exitosamente.');
   }
+
+  // Resetear estado de edición ANTES de guardar para que loadFromSheets no bloquee
+  editId = null;
+  window._editingUser = null;
+  document.getElementById('formTitle').textContent = 'Nuevo registro de pendiente';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  document.querySelector('.btn-primary').textContent = 'Crear registro';
+
+  saveLocal();
+  saveToSheets().then(() => {
+    renderTable(); renderStats0();
+    if (currentTab === 2) renderDashboard();
+  });
+
   clearForm();
   switchTab(0);
+  showToast(wasEditing ? 'Registro actualizado correctamente.' : 'Registro creado exitosamente.');
 }
 
 function clearForm() {
