@@ -645,6 +645,33 @@ function closeEditLoginModal() {
   pendingEditId = null;
 }
 
+function parseFecha(val) {
+  if (!val) return '';
+  const str = String(val).trim();
+  if (!str) return '';
+  // Formato YYYY-MM-DD — ideal
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Eliminar hora si viene con timestamp
+  const sinHora = str.replace(/[T ].*$/, '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(sinHora)) return sinHora;
+  // Formato DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+    const p = str.split('/');
+    return `${p[2]}-${p[1]}-${p[0]}`;
+  }
+  // Formato largo de JS: "Mon Mar 30 2026 00:00:00 GMT-0500..."
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+  } catch(e) {}
+  return '';
+}
+
 function openEditForm(id, loggedUser) {
   const r = records.find(x => x.id === id);
   if (!r) return;
@@ -653,36 +680,25 @@ function openEditForm(id, loggedUser) {
   document.getElementById('formTitle').textContent = 'Editar registro';
   document.getElementById('cancelEditBtn').style.display = '';
 
-  // Normalizar fecha al formato YYYY-MM-DD que requiere input type=date
-  let fecha = String(r.fechaRadicado || '').trim();
-  // Eliminar hora si viene con timestamp (ej: "2026-04-11 00:00:00" o "2026-04-11T00:00:00")
-  fecha = fecha.replace(/[T ].*$/, '');
-  // Si viene en formato DD/MM/YYYY convertir a YYYY-MM-DD
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) {
-    const parts = fecha.split('/');
-    fecha = `${parts[2]}-${parts[1]}-${parts[0]}`;
-  }
-  // Validar que sea una fecha válida
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fecha = '';
+  document.getElementById('fFecha').value = parseFecha(r.fechaRadicado);
 
-  document.getElementById('fFecha').value = fecha;
-  document.getElementById('fEstadoF').value = r.estado;
-  document.getElementById('fEstacionF').value = r.estacion;
+  document.getElementById('fEstadoF').value = r.estado || 'Pendiente';
+
+  // Normalizar estacion: "La Viga" → "TMA La Viga" si no existe en la lista
+  const ESTACIONES_VALIDAS = ['TMA La Viga','Cerromaco','Mitú','Cali','Carepa','Tubará','Leticia'];
+  let estacion = r.estacion || '';
+  if (!ESTACIONES_VALIDAS.includes(estacion)) {
+    // Intentar mapear nombres alternativos
+    if (estacion.toLowerCase().includes('viga')) estacion = 'TMA La Viga';
+  }
+  document.getElementById('fEstacionF').value = estacion;
+
   document.getElementById('fLote').value = r.lote || '';
-  document.getElementById('fComponenteF').value = r.componente;
-  document.getElementById('fDesc').value = r.descripcion;
-  document.getElementById('fObs').value = r.observaciones;
-
-  // Normalizar fecha subsanación igual
-  let fechaSub = String(r.fechaSubsanacion || '').trim().replace(/[T ].*$/, '');
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaSub)) {
-    const parts = fechaSub.split('/');
-    fechaSub = `${parts[2]}-${parts[1]}-${parts[0]}`;
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaSub)) fechaSub = '';
-  document.getElementById('fFechaSub').value = fechaSub;
-
-  document.getElementById('fObsSub').value = r.obsSubsanacion;
+  document.getElementById('fComponenteF').value = r.componente || '';
+  document.getElementById('fDesc').value = r.descripcion || '';
+  document.getElementById('fObs').value = r.observaciones || '';
+  document.getElementById('fFechaSub').value = parseFecha(r.fechaSubsanacion);
+  document.getElementById('fObsSub').value = r.obsSubsanacion || '';
   toggleSubsanacion();
   document.querySelector('.btn-primary').textContent = 'Guardar cambios';
   switchTab(1);
