@@ -93,6 +93,7 @@
         <button class="btn" onclick="document.getElementById('importFileInput').click()">⬆ Importar Excel</button>
         <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(event)">
         <button class="btn" onclick="exportCSV()">⬇ Exportar Excel</button>
+        <button class="btn" onclick="openPinModal()" style="border-color:#E24B4A;color:#E24B4A" title="Eliminar todos los registros">🗑 Eliminar todo</button>
       </div>
     </div>
     <div class="header-left">
@@ -233,6 +234,34 @@
   </div>
 </div>
 
+<!-- PIN MODAL -->
+<div id="pinModal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.5);align-items:center;justify-content:center">
+  <div style="background:var(--bg);border-radius:12px;padding:28px 32px;width:320px;box-shadow:0 4px 32px rgba(0,0,0,0.25);text-align:center">
+    <div style="font-size:32px;margin-bottom:8px">🗑</div>
+    <h2 style="font-size:16px;font-weight:500;margin:0 0 6px">Eliminar todos los registros</h2>
+    <p style="font-size:12px;color:var(--text2);margin:0 0 20px">Esta acción no se puede deshacer.<br>Ingresa el PIN de 4 dígitos para confirmar.</p>
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">
+      <input type="password" id="pin1" maxlength="1" inputmode="numeric" pattern="[0-9]"
+        style="width:48px;height:48px;text-align:center;font-size:22px;font-weight:600;border:2px solid var(--border2);border-radius:8px;background:var(--bg)"
+        oninput="pinNext(this,'pin2')" onkeydown="pinBack(event,this,'')">
+      <input type="password" id="pin2" maxlength="1" inputmode="numeric" pattern="[0-9]"
+        style="width:48px;height:48px;text-align:center;font-size:22px;font-weight:600;border:2px solid var(--border2);border-radius:8px;background:var(--bg)"
+        oninput="pinNext(this,'pin3')" onkeydown="pinBack(event,this,'pin1')">
+      <input type="password" id="pin3" maxlength="1" inputmode="numeric" pattern="[0-9]"
+        style="width:48px;height:48px;text-align:center;font-size:22px;font-weight:600;border:2px solid var(--border2);border-radius:8px;background:var(--bg)"
+        oninput="pinNext(this,'pin4')" onkeydown="pinBack(event,this,'pin2')">
+      <input type="password" id="pin4" maxlength="1" inputmode="numeric" pattern="[0-9]"
+        style="width:48px;height:48px;text-align:center;font-size:22px;font-weight:600;border:2px solid var(--border2);border-radius:8px;background:var(--bg)"
+        oninput="pinNext(this,'')" onkeydown="pinBack(event,this,'pin3')">
+    </div>
+    <div id="pinError" style="font-size:12px;color:#E24B4A;margin-bottom:12px;height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn btn-primary" style="background:#E24B4A;border-color:#E24B4A" onclick="confirmDeleteAll()">Eliminar todo</button>
+      <button class="btn" onclick="closePinModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- IMPORT MODAL -->
 <div id="importModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.45);align-items:center;justify-content:center">
   <div style="background:var(--bg);border-radius:12px;padding:24px;max-width:720px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 4px 32px rgba(0,0,0,0.2)">
@@ -355,7 +384,10 @@ async function loadFromSheets() {
       saveLocal();
       updateStorageIndicator('ok');
     } else {
-      loadLocal();
+      // Sheets vacío — resetear todo
+      records = [];
+      nextId = 1;
+      saveLocal();
       updateStorageIndicator('ok');
     }
   } catch(e) {
@@ -743,6 +775,58 @@ function showToast(msg, type='success') {
   setTimeout(() => t.style.display = 'none', 2800);
 }
 
+// ==================== PIN / ELIMINAR TODO ====================
+const CORRECT_PIN = '1234'; // cambia este PIN por el que prefieras
+
+function openPinModal() {
+  ['pin1','pin2','pin3','pin4'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('pinError').textContent = '';
+  document.getElementById('pinModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('pin1').focus(), 100);
+}
+
+function closePinModal() {
+  document.getElementById('pinModal').style.display = 'none';
+}
+
+function pinNext(current, nextId) {
+  // Solo acepta dígitos
+  current.value = current.value.replace(/[^0-9]/g,'');
+  if (current.value.length === 1 && nextId) {
+    document.getElementById(nextId).focus();
+  }
+}
+
+function pinBack(event, current, prevId) {
+  if (event.key === 'Backspace' && current.value === '' && prevId) {
+    document.getElementById(prevId).focus();
+  }
+  if (event.key === 'Enter') confirmDeleteAll();
+}
+
+function confirmDeleteAll() {
+  const pin = ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id).value).join('');
+  if (pin.length < 4) {
+    document.getElementById('pinError').textContent = 'Ingresa los 4 dígitos.';
+    return;
+  }
+  if (pin !== CORRECT_PIN) {
+    document.getElementById('pinError').textContent = 'PIN incorrecto. Intenta de nuevo.';
+    ['pin1','pin2','pin3','pin4'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('pin1').focus();
+    return;
+  }
+  // PIN correcto — eliminar todo
+  records = [];
+  nextId = 1;
+  saveData();
+  closePinModal();
+  renderTable(); renderStats0();
+  if (currentTab === 2) renderDashboard();
+  showToast('Todos los registros han sido eliminados.', 'warning');
+}
+// ==================== /PIN ====================
+
 // ==================== IMPORT ====================
 const FORM_FIELDS = [
   { key: 'fechaRadicado', label: 'Fecha de radicado' },
@@ -850,13 +934,20 @@ function doImport() {
 
   const VALID_ESTADOS = ['Pendiente','Cumplido','No atendido'];
   const VALID_LOTES = ['L1','L2'];
-  const VALID_ESTACIONES = ['TMA La Viga','Cerromaco','Mitú','Cali','Carepa','Tubará','Leticia'];
-  const VALID_COMP = ['Mecánico','Eléctrico','Hidráulico','Civil','Estructural','Arquitectónico','Ambiental','HSE','Electrónico','Otro'];
+
+  // Si no se añade al final, limpiar registros y resetear ID a 1
+  if (!append) {
+    records = [];
+    nextId = 1;
+  } else {
+    // Si se añade, el próximo ID es el máximo actual + 1
+    nextId = records.length > 0 ? Math.max(...records.map(r => r.id)) + 1 : 1;
+  }
 
   const newRecords = [];
   let skipped = 0;
   dataRows.forEach((row, ri) => {
-    if (row.every(c => String(c).trim() === '')) return; // skip blank rows
+    if (row.every(c => String(c).trim() === '')) return;
     const rec = {
       id: nextId++,
       fechaRadicado: '', estacion: '', lote: '', componente: '',
@@ -874,20 +965,17 @@ function doImport() {
         rec[f.key] = val;
       }
     });
-    // Validate/normalise estado
     const eMatch = VALID_ESTADOS.find(e => e.toLowerCase() === rec.estado.toLowerCase());
     rec.estado = eMatch || 'Pendiente';
-    // Normalise lote
     const lMatch = VALID_LOTES.find(l => l.toLowerCase() === rec.lote.toLowerCase());
     rec.lote = lMatch || rec.lote;
 
-    if (!rec.descripcion) { skipped++; return; } // skip rows with no description
+    if (!rec.descripcion) { skipped++; return; }
     newRecords.push(rec);
   });
 
-  if (!append) records = [];
   records.push(...newRecords);
-  saveData(); updateStorageIndicator();
+  saveData(); updateStorageIndicator('ok');
   closeImportModal();
   renderTable(); renderStats0();
   if (currentTab === 2) renderDashboard();
