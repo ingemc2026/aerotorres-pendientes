@@ -1057,10 +1057,12 @@ function confirmDeleteAll() {
     document.getElementById('pin1').focus();
     return;
   }
-  // PIN correcto — eliminar todo
+  // PIN correcto — eliminar todo local y en Sheets
   records = [];
   nextId = 1;
-  saveData();
+  lastSaveTime = Date.now(); // bloquear recarga automática
+  saveLocal();
+  saveToSheets(); // sincroniza Sheets con lista vacía
   closePinModal();
   renderTable(); renderStats0();
   if (currentTab === 2) renderDashboard();
